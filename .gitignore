@@ -1,0 +1,15 @@
+data/raw/
+data/selected/*.fna
+data/selected/*.fasta
+data/selected/*.fa
+work/
+.nextflow/
+.nextflow.log
+.nextflow.log.*
+results/
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+*.log
+nohup.out
