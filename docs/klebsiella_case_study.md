@@ -1,99 +1,311 @@
-# Case Study: Klebsiella pneumoniae Phylogenomics
+# Case Study: *Klebsiella pneumoniae* Phylogenomics
 
 ## Background
 
-Klebsiella pneumoniae is a Gram-negative opportunistic pathogen of global public health concern.
-It causes healthcare-associated pneumonia, liver abscesses, urinary tract infections, and
-bloodstream infections. The species acquires carbapenemases (KPC, NDM, OXA-48) and virulence
-factors (Yersiniabactin, Aerobactin, Colibactin) driving convergent high-risk lineages.
-WGS combined with core-genome SNP phylogenies allows high-resolution clonal reconstruction
-beyond conventional MLST.
+*Klebsiella pneumoniae* is a Gram-negative opportunistic pathogen of global public health concern.
+It is the leading cause of healthcare-associated pneumonia, liver abscesses, urinary tract infections,
+and bloodstream infections, particularly among immunocompromised patients.
+The species is characterised by remarkable genomic plasticity, with the rapid acquisition of resistance
+determinants — including carbapenemases such as KPC, NDM, OXA-48 — and virulence factors
+(Yersiniabactin, Aerobactin, Colibactin) driving the emergence of convergent high-risk lineages.
+
+Whole-genome sequencing (WGS) combined with phylogenomic analysis has become the gold standard
+for outbreak investigation, transmission tracing, and surveillance of antimicrobial resistance (AMR)
+in *K. pneumoniae*. Core-genome SNP phylogenies allow high-resolution reconstruction of clonal
+relationships that conventional MLST cannot resolve.
+
+---
 
 ## Objective
 
-Build a reproducible Nextflow DSL2 pipeline for K. pneumoniae whole-genome phylogenomics,
-integrating QC, AMR profiling, molecular typing, recombination-masked phylogeny, and pairwise
-SNP distances, with results in an interactive Dash dashboard.
+To build and execute a reproducible, containerised Nextflow DSL2 pipeline for whole-genome
+phylogenomics of *K. pneumoniae*, integrating quality control, AMR profiling, molecular typing,
+recombination-masked phylogeny, and pairwise SNP distance analysis into a single automated workflow,
+with results visualised in an interactive web dashboard.
+
+---
 
 ## Dataset
 
-- Total genomes sequenced: 150
-- Selected for phylogenomics: 50
-- Selection criteria: representative ST diversity; contigs <= 10, N50 >= 200 kbp
-- Source: NCBI RefSeq / local sequencing (GCF accessions)
-- Reference: K. pneumoniae KPNIH1 (ST258)
-- Assembly format: draft contigs (.fna)
-- Contig range: 1-9 per genome; Total length: 5.2-6.1 Mbp; N50: 4.4-5.6 Mbp
+| Parameter | Value |
+|-----------|-------|
+| Total genomes available | 150 |
+| Genomes selected for phylogenomics | 50 |
+| Selection criteria | Representative diversity across sequence types; passed QC thresholds (contigs ≤ 10, N50 ≥ 200 kbp) |
+| Source | NCBI RefSeq (GCF accessions) — pre-assembled genomes |
+| Input format | Draft assemblies (contigs), `.fna` — **not raw reads** |
+| Reference genome | *K. pneumoniae* KPNIH1 (ST258) |
+| Contig range | 1–9 contigs per genome |
+| Total length range | ~5.2–6.1 Mbp |
+| N50 range | ~4.4–5.6 Mbp |
+
+> **Note on input data:** This pipeline used pre-assembled genome sequences downloaded from NCBI RefSeq.
+> Raw sequencing reads were not available. As a result, read quality control and de novo assembly steps
+> were not performed — the pipeline began directly at assembly QC (QUAST). In a clinical WGS workflow
+> starting from raw Illumina reads, additional upstream steps would be required (see *Pipeline Scope* below).
+
+---
 
 ## Methods
 
-### Pipeline modules
+### Pipeline Architecture
+
+The pipeline was implemented in **Nextflow DSL2** with all tools executed in Docker containers
+(Docker Desktop with WSL2 integration). Each tool is encapsulated as a separate module under
+`pipeline/modules/`, with resource allocation managed centrally in `nextflow.config`.
+
+**As implemented (pre-assembled NCBI genomes as input):**
+
+```
+data/selected/*.fna  →  QUAST  →  AMRFINDER  →  KLEBORATE
+                     →  SNIPPY (contig mode, --ctgs)
+                     →  SNIPPY_CORE
+                     →  GUBBINS
+                     →  IQTREE
+                     →  SNP_DISTS
+```
+
+**Full clinical WGS pipeline (raw reads as input) would add upstream steps:**
+
+```
+Raw FASTQ reads  →  FastQC (read QC)
+                 →  fastp / Trimmomatic (adapter trimming)
+                 →  SPAdes / Shovill (de novo assembly)
+                 →  [continue as above, Snippy in read mode --R1/--R2]
+```
+
+### Module Descriptions
 
 | Step | Tool | Version | Purpose |
 |------|------|---------|---------|
-| QC | QUAST | 5.2.0 | Assembly quality metrics |
-| AMR profiling | AMRFinderPlus | latest | AMR genes, point mutations, virulence factors |
-| Molecular typing | Kleborate | 3.x | MLST, resistance and virulence scoring (--preset kpsc) |
-| Read mapping | Snippy | 4.6.0 | Per-sample WGS alignment (contig mode) |
-| Core alignment | snippy-core | 4.6.0 | Core-genome SNP alignment |
-| Recombination | Gubbins | 3.3.5 | Recombination masking (--mar, --tree-builder fasttree) |
-| Phylogeny | IQ-TREE 2 | 2.3.6 | ML phylogeny (GTR+G, 1000 bootstraps, 1000 aLRT) |
-| SNP distances | snp-dists | 0.8.2 | Pairwise SNP matrix |
+| Assembly QC | QUAST | 5.2.0 | Assembly quality metrics (contigs, N50, total length) |
+| AMR profiling | AMRFinderPlus | latest | Detection of AMR genes, point mutations, and virulence factors against NCBI Reference Gene Catalog |
+| Molecular typing | Kleborate | 3.x | MLST sequence typing (Pasteur scheme), virulence locus detection, and independent resistance scoring (`--preset kpsc`) for *K. pneumoniae* species complex |
+| Genome alignment | Snippy | 4.6.0 | Per-sample whole-genome alignment against reference in **contig mode** (`--ctgs`) — used because only assemblies were available; read mode (`--R1/--R2`) would be preferred with raw reads |
+| Core SNP alignment | snippy-core | 4.6.0 | Core-genome SNP alignment across all 50 samples |
+| Recombination masking | Gubbins | 3.3.5 | Recombination masking via marginal ancestral reconstruction (`--mar`, `--tree-builder fasttree`) |
+| ML phylogeny | IQ-TREE 2 | 2.3.6 | Maximum-likelihood phylogeny (GTR+G model, 1000 ultrafast bootstraps, 1000 aLRT replicates) |
+| SNP distances | snp-dists | 0.8.2 | Pairwise core-genome SNP distance matrix |
 
-Results merged into summary.tsv (50 x 227 columns) via scripts/merge_summary.py.
-Interactive dashboard: dashboard/app.py (6 tabs).
+> **Kleborate vs AMRFinderPlus:** These two tools perform AMR detection independently using different
+> databases. AMRFinderPlus (NCBI Reference Gene Catalog) provides a comprehensive gene-by-gene list.
+> Kleborate uses its own curated database to produce a clinical resistance score (0–3) focused on
+> *K. pneumoniae*-relevant loci. The resistance score is not derived from AMRFinderPlus results —
+> the two analyses are complementary.
+
+### Key Parameters
+
+```bash
+# QUAST
+quast.py {assembly} --output-dir {outdir}
+
+# Kleborate — MLST, virulence, and independent resistance scoring for K. pneumoniae species complex
+kleborate -a {assembly} -o {outdir} --preset kpsc
+
+# AMRFinderPlus — comprehensive AMR/virulence gene detection (NCBI database)
+amrfinder --nucleotide {assembly} --organism Klebsiella_pneumoniae --plus --name {sample_id}
+
+# Snippy — contig mode (used here because raw reads were unavailable)
+snippy --cpus 8 --ref {reference} --ctgs {assembly} --outdir {sample_id}
+# Read mode (preferred when raw reads are available):
+# snippy --cpus 8 --ref {reference} --R1 {reads_R1} --R2 {reads_R2} --outdir {sample_id}
+
+# Gubbins — marginal ancestral reconstruction (--mar) to reduce memory usage for 50 genomes
+run_gubbins.py --threads 4 --prefix gubbins --tree-builder fasttree --mar {core.full.aln}
+
+# IQ-TREE 2
+iqtree2 -s {filtered_aln} -m GTR+G -bb 1000 -alrt 1000 -T AUTO --threads-max 8 -pre iqtree -redo
+```
+
+### Post-processing
+
+Results from all modules were merged into a master summary table (`results/summary/summary.tsv`,
+50 samples × 227 columns) using a custom Python script (`scripts/merge_summary.py`).
+
+An interactive **Dash dashboard** (`dashboard/app.py`) provides six analytical views:
+Phylogeny, AMR Heatmap, Sequence Types, Assembly QC, Virulence, and SNP Matrix.
+
+---
 
 ## Results
 
-### Assembly QC
-All 50 genomes passed. Median 4 contigs; total length 5.2-6.1 Mbp; N50 > 4 Mbp.
+### Assembly Quality (QUAST)
 
-### Sequence Types (Kleborate MLST)
-10 STs identified. ST11 dominant (n=15); ST23 n=6; ST15 n=5; ST307 n=5; ST147 n=4;
-ST65 n=4; ST37 n=3; ST16 n=3; ST512 n=3; ST258 n=2.
-All 50 isolates: Klebsiella pneumoniae sensu stricto.
+All 50 NCBI assemblies passed quality thresholds:
+- Median contig count: 4 contigs per genome
+- Total length: 5.2–6.1 Mbp (consistent with expected *K. pneumoniae* genome size)
+- N50 > 4 Mbp for most genomes, indicating high-quality draft assemblies
+- Minimal ambiguous bases (N content)
+
+### Sequence Type Distribution (Kleborate MLST)
+
+Ten distinct sequence types were identified across the 50 genomes:
+
+| Sequence Type | Count | Notes |
+|--------------|-------|-------|
+| ST11 | 15 | Dominant lineage; high-risk CRKp clone |
+| ST23 | 6 | Classical hypervirulent lineage |
+| ST15 | 5 | Emerging ESBL/carbapenem-resistant clone |
+| ST307 | 5 | Globally disseminated high-risk clone |
+| ST147 | 4 | KPC/NDM-producing international clone |
+| ST65 | 4 | Hypervirulent lineage |
+| ST37 | 3 | — |
+| ST16 | 3 | — |
+| ST512 | 3 | KPC-producing ST258 variant |
+| ST258 | 2 | Pandemic carbapenem-resistant clone |
+
+All 50 isolates were confirmed as *Klebsiella pneumoniae sensu stricto*.
 
 ### Phylogenetic Structure (IQ-TREE 2)
-- Top clade: ST11 (n=15), tightly clustered clonal expansion
-- Middle cluster: ST258/ST307/ST147 with convergent KPC/NDM acquisition
-- ST16 clade: 3 isolates, short branches, recent common ancestry
-- ST307 divergent clade (n=4): deeply branching outgroup, long branches (0.3-0.5)
-- ST23/ST65: hypervirulent, phylogenetically distinct from AMR lineages
+
+The maximum-likelihood phylogeny revealed clear clonal structure:
+
+- **Top clade (ST11, n=15):** Tightly clustered with short branches, consistent with clonal
+  expansion of this high-risk carbapenem-resistant lineage. ST11 is the dominant CRKp clone
+  in Asia and is closely related to ST258.
+
+- **Middle cluster (ST258/ST307, ST147):** ST258 and ST307 cluster together with intermediate
+  branch lengths, reflecting their shared evolutionary origin and convergent acquisition of
+  carbapenemase genes (KPC-2, KPC-3, NDM).
+
+- **ST16 clade (bottom right):** Three ST16 isolates form a tight cluster with short branches,
+  suggesting recent common ancestry.
+
+- **ST307 divergent clade (bottom left, n=4):** Four genomes — GCF_057962135, GCF_033245965,
+  GCF_002258105, GCF_001701425 — form a deeply branching outgroup with long branch lengths
+  (~0.3–0.5 substitutions/site), indicating substantial genomic divergence consistent with
+  geographically or temporally distinct acquisitions.
+
+- **ST23/ST65 (hypervirulent):** Scattered across the tree but identifiable as a distinct
+  group by their virulence locus profiles.
 
 ### AMR Gene Burden (AMRFinderPlus)
-128 genes detected (present in >= 2 isolates).
-Carbapenemases: blaKPC-2/3/31/91, blaNDM-1/4/5/7, blaOXA-48/181
-ESBLs: blaCTX-M-14/15/3/55/65, blaDHA-1, blaSHV variants
-Fluoroquinolone: gyrA (D87A/G/N, S83F/I), parC (E84K, S80I), oqxA/oqxB
-Aminoglycoside: armA, rmtB1, rmtF1; Colistin: mgrB, pmrB mutations
 
-### Virulence (Kleborate)
-Classical (ST11/ST258/ST307/ST147): lack major virulence loci.
-Hypervirulent (ST23/ST65): Ybt + Clb + Iuc + Iro + RmpADC/rmpA2.
-CR-hvKP: small subset combining KPC/NDM with Iuc + Ybt.
+128 resistance genes were detected across the 50 genomes (present in ≥ 2 isolates). Key findings:
+
+- **Carbapenemases:** blaKPC-2, blaKPC-3, blaKPC-31, blaKPC-91, blaNDM-1, blaNDM-4,
+  blaNDM-5, blaNDM-7, blaOXA-48, blaOXA-181
+- **ESBLs:** blaCTX-M-14, blaCTX-M-15, blaCTX-M-3, blaCTX-M-55, blaCTX-M-65,
+  blaDHA-1, blaSHV variants (blaSHV-1, -11, -12, -28, -31, -5)
+- **Fluoroquinolone resistance:** gyrA (D87A, D87G, D87N, S83F, S83I), parC (E84K, S80I),
+  oqxA/oqxB efflux pumps
+- **Aminoglycoside resistance:** armA, rmtB1, rmtF1, multiple aac/aad/aph gene variants
+- **Colistin resistance:** mgrB truncations, pmrB mutations
+- **Stress response / metal resistance:** arsABCDR, merABCDEFPRT, silABCEFPRS, pcoABCDERS
+
+### Virulence Loci (Kleborate)
+
+Virulence profiling revealed two major phenotypic groups:
+
+**Classical (non-hypervirulent):** Most ST11, ST258, ST307, and ST147 isolates lack major
+virulence loci, consistent with their epidemiology as healthcare-associated, AMR-driven pathogens.
+
+**Hypervirulent (hvKP):** A subset of isolates — primarily ST23 and ST65 — carry:
+- **Ybt (Yersiniabactin):** Present in the majority of hvKP isolates
+- **Clb (Colibactin):** Present in a subset — genotoxic, associated with invasive disease
+- **Iuc (Aerobactin):** Siderophore strongly associated with liver abscess and invasive hvKP
+- **Iro (Salmochelin):** Co-occurs with Aerobactin in most hypervirulent isolates
+- **RmpADC / rmpA2:** Hypermucoviscosity regulators — present in highest-risk isolates
+  (GCF_042482205, GCF_037477785, GCF_036287455)
+
+The convergence of carbapenem resistance with hypervirulence — **CR-hvKP** —
+was identified in a small number of isolates combining KPC/NDM carbapenemases (AMRFinderPlus)
+with Iuc + Ybt virulence loci (Kleborate), representing the most clinically critical phenotype.
 
 ### Pairwise SNP Distances
-Inter-ST: > 5,000 SNPs. Intra-ST: variable (ST11/ST16 tight).
-No pairs <= 25 SNPs (no active outbreak clusters).
+
+The core-genome SNP matrix revealed:
+- Inter-ST distances: typically > 5,000 SNPs, confirming distinct evolutionary lineages
+- Intra-ST distances: variable; ST11 and ST16 show tight within-clade clustering
+- **Outbreak threshold (≤ 25 SNPs):** No pairs fell within this threshold, confirming these
+  50 genomes represent a diverse surveillance collection rather than a single outbreak,
+  consistent with the study design (selection of representative diversity from NCBI)
+
+---
 
 ## Key Findings
 
-1. ST11 is the dominant clone (30%), consistent with global CRKp epidemiology.
-2. Multiple carbapenemase classes co-circulate: KPC, NDM, OXA-48 (polyclonal resistance).
-3. Hypervirulent (ST23/ST65) and AMR lineages (ST11/ST258) co-circulate clinically.
-4. CR-hvKP isolates identified (highest clinical priority).
-5. Assembly quality uniformly high (all <= 9 contigs, N50 > 4 Mbp).
-6. No active transmission clusters in this diverse collection.
+1. **ST11 is the dominant clone** (30% of isolates), consistent with its global emergence as
+   the leading carbapenem-resistant *K. pneumoniae* (CRKp) lineage in Asia and Europe.
+
+2. **Multiple carbapenemase classes co-circulate:** KPC (ST11, ST258, ST512), NDM (ST147, ST15),
+   and OXA-48 (ST307) represent distinct resistance mechanisms, highlighting the polyclonal
+   nature of carbapenem resistance in this collection.
+
+3. **Hypervirulent lineages (ST23, ST65)** are phylogenetically distinct from carbapenem-resistant
+   lineages but share the dataset, reflecting co-circulation of classical and hypervirulent
+   *K. pneumoniae* in clinical settings.
+
+4. **CR-hvKP isolates** — combining carbapenem resistance (detected by AMRFinderPlus) with
+   aerobactin and yersiniabactin virulence loci (detected by Kleborate) — represent the
+   highest-priority clinical threat identified in this collection.
+
+5. **All 50 NCBI assemblies were of high quality:** ≤ 9 contigs and N50 > 4 Mbp, confirming
+   suitability for downstream phylogenomic analysis.
+
+6. **No active transmission clusters** were identified (no pairs ≤ 25 SNPs), consistent
+   with the dataset representing geographically and temporally diverse isolates from NCBI.
+
+---
+
+## Pipeline Scope and Applicability to Clinical WGS
+
+This pipeline was developed and tested using pre-assembled genomes downloaded from NCBI RefSeq.
+In a clinical or research setting where sequencing is performed in-house, the pipeline would be
+extended with the following upstream steps before QUAST:
+
+| Additional step | Tool | Purpose |
+|----------------|------|---------|
+| Read quality check | FastQC | Visualise base quality, adapter content, duplication rate |
+| Read trimming | fastp or Trimmomatic | Remove adapters, trim low-quality bases |
+| De novo assembly | SPAdes or Shovill | Reconstruct genome from overlapping reads |
+
+Additionally, Snippy would run in **read mode** (`--R1/--R2`) rather than contig mode (`--ctgs`)
+when raw reads are available, as this is more sensitive and uses the original data directly
+without information loss from assembly.
+
+All steps from QUAST onward are identical regardless of whether the input came from in-house
+sequencing or pre-assembled NCBI genomes.
+
+---
 
 ## Technical Implementation
 
-Nextflow DSL2 | Docker Desktop (WSL2) | StaPH-B containers | Python Dash dashboard
-Full run (50 genomes): ~3-4 hours. Cached re-runs: < 5 minutes (-resume).
+| Component | Technology |
+|-----------|-----------|
+| Workflow manager | Nextflow DSL2 |
+| Containerisation | Docker Desktop (WSL2 backend) |
+| Container registry | StaPH-B, quay.io/biocontainers |
+| Operating system | Ubuntu (WSL2) on Windows 11 |
+| Resource management | Nextflow `withName` process selectors in `nextflow.config` |
+| Summary merging | Python 3 / pandas (`scripts/merge_summary.py`) |
+| Visualisation | Python Dash + Plotly (`dashboard/app.py`) |
+| Version control | Git / GitHub |
+
+Pipeline execution (50 genomes, full run): approximately 3–4 hours on 16-core / 16 GB RAM system.
+Cached re-runs (e.g., adding snp-dists): < 5 minutes.
+
+---
 
 ## Conclusions
 
-Complete, reproducible WGS phylogenomics for K. pneumoniae across 10 STs, detecting 128 AMR
-genes, distinguishing AMR from hypervirulent lineages, and producing a bootstrap-supported
-ML phylogeny with pairwise SNP matrix.
+This project demonstrates a complete, reproducible phylogenomics workflow for *K. pneumoniae*
+using freely available tools in a Nextflow DSL2 framework. Starting from pre-assembled NCBI
+genomes, the pipeline successfully:
 
-Repository: https://github.com/bkhimek/K-pneumoniae-Phylogenomics
+- Characterised 50 *K. pneumoniae* genomes across 10 sequence types
+- Identified ST11 as the dominant high-risk carbapenem-resistant clone
+- Detected 128 AMR genes including multiple carbapenemase classes (AMRFinderPlus)
+- Scored virulence and resistance burden for each isolate (Kleborate)
+- Distinguished classical AMR lineages from hypervirulent isolates
+- Built a maximum-likelihood phylogeny with strong bootstrap support
+- Produced a pairwise SNP matrix confirming no active outbreak clusters
+
+The modular Nextflow architecture and containerised tools ensure full reproducibility across
+computing environments. Extension to a full clinical WGS pipeline starting from raw reads
+requires only the addition of upstream read QC and de novo assembly steps, with Snippy
+switching from contig mode to read mode.
+
+---
+
+*Pipeline repository: https://github.com/bkhimek/K-pneumoniae-Phylogenomics*
