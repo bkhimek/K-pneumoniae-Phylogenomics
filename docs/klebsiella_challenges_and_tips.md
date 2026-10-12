@@ -41,12 +41,17 @@
 - Wrong: pd.read_csv(f, index_col=0).T  ->  Right: pd.read_csv(f) then drop Assembly column.
 - Applying .T double-transposes -> 21 rows per sample instead of 1.
 
-## 10. SNP Distance Thresholds (K. pneumoniae)
-- 0-10 SNPs: same transmission event
-- 11-25 SNPs: probable outbreak cluster
-- 26-50 SNPs: possible indirect transmission
-- >100 SNPs: distinct clonal acquisitions
-- Use recombination-corrected alignment (Gubbins output). Raw SNP counts are inflated.
+## 10. Interpreting SNP Distances (K. pneumoniae)
+- No universal SNP threshold separates "outbreak" from "non-outbreak" in K. pneumoniae.
+- Distances are influenced by: mutation rate (varies by lineage), reference genome choice,
+  recombination handling (raw core.aln counts are inflated vs Gubbins-masked alignment),
+  and sampling interval (isolates from the same patient one week apart accumulate fewer
+  mutations than those from different hospitals months apart).
+- Always use the recombination-masked alignment (Gubbins output) as input to snp-dists,
+  not the pre-Gubbins core.aln — raw SNP counts will be substantially higher.
+- The appropriate framework is convergence of multiple lines of evidence: phylogenetic
+  position, SNP distance, AMR/virulence profile, sequence type, and epidemiological
+  metadata together — not a single numerical cutoff applied in isolation.
 
 ## 11. Dash Dashboard
 - UnboundLocalError 'lx': use lx.extend([...]) not lx += [...] inside nested functions.

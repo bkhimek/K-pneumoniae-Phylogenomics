@@ -31,7 +31,7 @@ with results visualised in an interactive web dashboard.
 |-----------|-------|
 | Total genomes available | 150 |
 | Genomes selected for phylogenomics | 50 |
-| Selection criteria | Representative diversity across sequence types; passed QC thresholds (contigs ≤ 10, N50 ≥ 200 kbp) |
+| Selection criteria | Three criteria applied simultaneously: (1) assembly quality (contigs ≤ 10, N50 ≥ 200 kbp); (2) representation of clinically significant STs identified from global prevalence literature (ST11, ST258, ST307, ST147, ST16) plus hypervirulent lineages (ST23, ST65); (3) total capped at 50 for IQ-TREE runtime feasibility |
 | Source | NCBI RefSeq (GCF accessions) — pre-assembled genomes |
 | Input format | Draft assemblies (contigs), `.fna` — **not raw reads** |
 | Reference genome | *K. pneumoniae* KPNIH1 (ST258) |
@@ -122,8 +122,8 @@ iqtree2 -s {filtered_aln} -m GTR+G -bb 1000 -alrt 1000 -T AUTO --threads-max 8 -
 Results from all modules were merged into a master summary table (`results/summary/summary.tsv`,
 50 samples × 227 columns) using a custom Python script (`scripts/merge_summary.py`).
 
-An interactive **Dash dashboard** (`dashboard/app.py`) provides six analytical views:
-Phylogeny, AMR Heatmap, Sequence Types, Assembly QC, Virulence, and SNP Matrix.
+An interactive **Dash dashboard** (`dashboard/app.py`) provides three analytical views:
+Phylogeny + ST, AMR Heatmap, and Virulence Heatmap.
 
 ---
 
@@ -210,16 +210,25 @@ virulence loci, consistent with their epidemiology as healthcare-associated, AMR
 
 The convergence of carbapenem resistance with hypervirulence — **CR-hvKP** —
 was identified in a small number of isolates combining KPC/NDM carbapenemases (AMRFinderPlus)
-with Iuc + Ybt virulence loci (Kleborate), representing the most clinically critical phenotype.
+with Iuc + Ybt virulence loci (Kleborate). This genomic combination is consistent with the
+convergence of carbapenem resistance and hypervirulence-associated determinants, identifiable
+only when AMR and virulence gene data are interpreted together.
 
 ### Pairwise SNP Distances
 
-The core-genome SNP matrix revealed:
+The core-genome SNP matrix (computed from the Gubbins-masked alignment) revealed:
 - Inter-ST distances: typically > 5,000 SNPs, confirming distinct evolutionary lineages
 - Intra-ST distances: variable; ST11 and ST16 show tight within-clade clustering
-- **Outbreak threshold (≤ 25 SNPs):** No pairs fell within this threshold, confirming these
-  50 genomes represent a diverse surveillance collection rather than a single outbreak,
-  consistent with the study design (selection of representative diversity from NCBI)
+- No isolate pairs showed the combined genomic signals — phylogenetic proximity, shared
+  AMR/virulence profile, and epidemiological link — expected of closely related isolates,
+  consistent with the deliberate selection of genomes to represent phylogenetic and
+  sequence-type diversity rather than epidemiological relatedness
+
+> **Note on SNP thresholds:** Interpreting pairwise SNP distances requires context.
+> No universal threshold separates "outbreak" from "non-outbreak" — distances are influenced
+> by mutation rate, reference genome choice, recombination handling, and sampling interval.
+> The appropriate framework is convergence of multiple lines of evidence: phylogenetic position,
+> SNP distance, AMR/virulence profile, sequence type, and epidemiological metadata together.
 
 ---
 
@@ -237,14 +246,15 @@ The core-genome SNP matrix revealed:
    *K. pneumoniae* in clinical settings.
 
 4. **CR-hvKP isolates** — combining carbapenem resistance (detected by AMRFinderPlus) with
-   aerobactin and yersiniabactin virulence loci (detected by Kleborate) — represent the
-   highest-priority clinical threat identified in this collection.
+   aerobactin and yersiniabactin virulence loci (detected by Kleborate) — are of particular
+   clinical concern and are identifiable only through combined interpretation of both tools.
 
 5. **All 50 NCBI assemblies were of high quality:** ≤ 9 contigs and N50 > 4 Mbp, confirming
    suitability for downstream phylogenomic analysis.
 
-6. **No active transmission clusters** were identified (no pairs ≤ 25 SNPs), consistent
-   with the dataset representing geographically and temporally diverse isolates from NCBI.
+6. **No isolate pairs showed large inter-ST distances consistent with a phylogenetically diverse
+   reference dataset**, as expected given the deliberate selection of genomes to represent
+   sequence-type diversity rather than epidemiological relatedness.
 
 ---
 
@@ -264,8 +274,9 @@ Additionally, Snippy would run in **read mode** (`--R1/--R2`) rather than contig
 when raw reads are available, as this is more sensitive and uses the original data directly
 without information loss from assembly.
 
-All steps from QUAST onward are identical regardless of whether the input came from in-house
-sequencing or pre-assembled NCBI genomes.
+The core analytical approach from QUAST onward remains applicable regardless of input origin,
+although clinical implementation requires additional data processing, quality controls, and
+epidemiological information to make genomic distances interpretable.
 
 ---
 
@@ -299,13 +310,14 @@ genomes, the pipeline successfully:
 - Scored virulence and resistance burden for each isolate (Kleborate)
 - Distinguished classical AMR lineages from hypervirulent isolates
 - Built a maximum-likelihood phylogeny with strong bootstrap support
-- Produced a pairwise SNP matrix confirming no active outbreak clusters
+- Produced a pairwise SNP matrix reflecting the phylogenetic diversity of the reference dataset
 
 The modular Nextflow architecture and containerised tools ensure full reproducibility across
-computing environments. Extension to a full clinical WGS pipeline starting from raw reads
-requires only the addition of upstream read QC and de novo assembly steps, with Snippy
-switching from contig mode to read mode.
+computing environments. The core analytical approach from QUAST onward remains applicable to
+clinical WGS workflows; extension to raw reads requires upstream read QC and de novo assembly
+steps, with Snippy switching from contig mode to read mode.
 
 ---
 
-*Pipeline repository: https://github.com/bkhimek/K-pneumoniae-Phylogenomics*
+*Pipeline repository: https://github.com/bkhimek/K-pneumoniae-Phylogenomics*  
+*Live demonstration: https://kgbioscience.com — K. pneumoniae Phylogenomics Pipeline card*
