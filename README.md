@@ -34,7 +34,8 @@ python3 dashboard/app.py
 ```
 Open http://localhost:8050
 
-Three-tab interactive dashboard: Phylogeny + ST · AMR Heatmap · Virulence Heatmap
+Six-tab interactive dashboard: Phylogeny · AMR Heatmap · Sequence Types · Assembly QC · Virulence · SNP Matrix
+Three views published as standalone reports at kgbioscience.com: Phylogeny+ST · AMR Heatmap · Virulence Heatmap
 
 ## Key Results (50 genomes)
 

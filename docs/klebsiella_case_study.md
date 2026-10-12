@@ -122,8 +122,10 @@ iqtree2 -s {filtered_aln} -m GTR+G -bb 1000 -alrt 1000 -T AUTO --threads-max 8 -
 Results from all modules were merged into a master summary table (`results/summary/summary.tsv`,
 50 samples × 227 columns) using a custom Python script (`scripts/merge_summary.py`).
 
-An interactive **Dash dashboard** (`dashboard/app.py`) provides three analytical views:
-Phylogeny + ST, AMR Heatmap, and Virulence Heatmap.
+An interactive **Dash dashboard** (`dashboard/app.py`) provides six analytical views:
+Phylogeny, AMR Heatmap, Sequence Types, Assembly QC, Virulence, and SNP Matrix.
+Three of these — Phylogeny + ST, AMR Heatmap, and Virulence Heatmap — are published as standalone
+interactive reports at kgbioscience.com, accessible without running the pipeline.
 
 ---
 
